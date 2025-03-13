@@ -5,14 +5,14 @@ format: html
 
 ## Question 1
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 #| echo: true
 # Load required packages
 library(doParallel)
 library(foreach)
 
 mv <- function(i){
-  x <- rexp(100, rate = 1)
+  x <- rexp(5, rate = 1)
   c(mean = mean(x), variance = var(x))
 }
 # Create and register a parallel cluster
@@ -33,7 +33,7 @@ print(results)
 
 ## Question 2
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 #| echo: true
 # Load necessary libraries
 library(MASS)         # For galaxies data
@@ -49,8 +49,8 @@ n_boot <- 10000
 # Serial Bootstrapping
 set.seed(123)
 serial_time <- system.time({
-  boot_medians_ser <- foreach(i = 1:nboot, .combine = c, .packages = "MASS") %do% {
-    median(sample(galaxies, replace = TRUE))
+  boot_medians_ser <- foreach(i = 1:n_boot, .combine = c, .packages = "MASS") %do% {
+    median(sample(galaxies, size=length(galaxies), replace = TRUE))
   }
 })
 
@@ -66,7 +66,7 @@ registerDoParallel(cl)
 set.seed(123)
 parallel_time <- system.time({
   boot_medians_parallel <- foreach(i = 1:n_boot, .packages = 'MASS') %dopar% {
-    sample_data <- sample(galaxies, replace = TRUE)
+    sample_data <- sample(galaxies, size= length(galaxies), replace = TRUE)
     median(sample_data)
   }
 })
@@ -83,7 +83,7 @@ chunk_parallel_time <- system.time({
   boot_medians_chunk <- foreach(i = 1:n_chunks, .packages = 'MASS', .combine = c) %dopar% {
     # For each chunk, perform 1000 bootstrap samples
     sapply(1:chunk_size, function(j) {
-      sample_data <- sample(galaxies, replace = TRUE)
+      sample_data <-sample(galaxies,size=length(galaxies),       replace = TRUE)
       median(sample_data)
     })
   }
@@ -99,7 +99,7 @@ When each iteration is very quick (like a single bootstrap), parallel processing
 
 ## Question 3
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 #| echo: true
 ## Parallel Processing Code
 library(doParallel)
@@ -138,33 +138,17 @@ coverage_prob_parallel <- mean(coverage_parallel)
 # Stop the cluster after parallel processing is complete
 stopCluster(cl)
 
-## Sequential Processing Code
-serial_time <- system.time({
-  coverage_serial <- numeric(nsim)
-  
-  for (sim in 1:nsim) {
-    sample_data <- rexp(n, rate = 1)
-    boot_means <- replicate(B, mean(sample(sample_data, size = n, replace = TRUE)))
-    ci <- quantile(boot_means, probs = c(0.025, 0.975))
-    coverage_serial[sim] <- as.numeric(1 >= ci[1] & 1 <= ci[2])
-  }
-})
-coverage_prob_serial <- mean(coverage_serial)
 
 ## Results
 cat("Parallel processing time:\n")
 print(parallel_time)
 cat("Estimated coverage (parallel):", coverage_prob_parallel, "\n\n")
 
-cat("Sequential processing time:\n")
-print(serial_time)
-cat("Estimated coverage (sequential):", coverage_prob_serial, "\n")
-
 ```
 
 ## Question 4
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 #| echo: true
 library(doParallel)
 library(foreach)
@@ -194,11 +178,9 @@ print(results)
 
 ##Question 5
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 #| echo: true
-# -----------------------
 # Setup
-# -----------------------
 library(iterators)
 library(foreach)
 library(doParallel)
@@ -254,18 +236,13 @@ replicate_time <- system.time({
 })
 
 # Print the results and timing comparisons
-cat("Results and timings:\n\n")
 
 cat("parLapply results:\n")
-print(parLapply_results)
 print(parLapply_time)
 
-cat("\nforeach (%dopar%) results:\n")
-print(foreach_results)
+cat("\nforeach results:\n")
 print(foreach_time)
 
 cat("\nreplicate results:\n")
-print(replicate_results)
 print(replicate_time)
-
 ```
