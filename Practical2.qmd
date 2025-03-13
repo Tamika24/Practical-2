@@ -7,39 +7,28 @@ format: html
 
 ```{r}
 #| echo: true
-# Load necessary libraries
-library(foreach)
+# Load required packages
 library(doParallel)
-library(knitr)
+library(foreach)
 
-# Set up a parallel backend with one fewer than available cores
-ncores <- parallel::detectCores() - 1
-cl <- makeCluster(ncores)
+mv <- function(i){
+  x <- rexp(100, rate = 1)
+  c(mean = mean(x), variance = var(x))
+}
+# Create and register a parallel cluster
+cl <- makeCluster(detectCores()-1)
 registerDoParallel(cl)
 
-# Number of simulations and sample size for each simulation
-num_simulations <- 100
-sample_size <- 100  # you can change this if needed
-
-# Use a foreach loop to run the simulation 100 times
-results <- foreach(i = 1:num_simulations, .combine = rbind) %dopar% {
-  # Generate a random sample from an exponential distribution with mean = 1
-  sample_data <- rexp(sample_size, rate = 1)
-  
-  # Calculate the mean and variance of the sample
-  sample_mean <- mean(sample_data)
-  sample_variance <- var(sample_data)
-  
-  # Return a vector with the mean and variance
-  c(mean = sample_mean, variance = sample_variance)
+# Run the loop 100 times in parallel, row-binding the results
+results <- foreach(i = 1:100, .combine = rbind) %dopar% {
+ mv(i)
 }
 
-# Stop the parallel cluster
+# Stop the cluster
 stopCluster(cl)
 
-# Display the first few rows of the results
-cat("The results are :")
-results
+# Display the results
+print(results)
 ```
 
 ## Question 2
@@ -60,11 +49,11 @@ n_boot <- 10000
 # Serial Bootstrapping
 set.seed(123)
 serial_time <- system.time({
-  boot_medians_serial <- replicate(n_boot, {
-    sample_data <- sample(galaxies, replace = TRUE)
-    median(sample_data)
-  })
+  boot_medians_ser <- foreach(i = 1:nboot, .combine = c, .packages = "MASS") %do% {
+    median(sample(galaxies, replace = TRUE))
+  }
 })
+
 cat("Serial processing time:\n")
 print(serial_time)
 
@@ -112,33 +101,64 @@ When each iteration is very quick (like a single bootstrap), parallel processing
 
 ```{r}
 #| echo: true
-# Set simulation parameters
-set.seed(123)        # For reproducibility
-n <- 50              # Sample size
-M <- 1000            # Number of simulation iterations
-B <- 1000            # Number of bootstrap replicates per iteration
+## Parallel Processing Code
+library(doParallel)
+library(foreach)
+# Set a seed for reproducibility
+set.seed(123)
 
-# Vector to record if the CI covers the true mean (1) for each simulation
-coverage <- numeric(M)
+# Parameters
+n <- 50       # Sample size for each simulation
+B <- 1000     # Number of bootstrap replications per simulation
+nsim <- 1000  # Number of simulation iterations for coverage estimation
 
-for(i in 1:M) {
-  # Draw a sample of size 50 from an exponential distribution (mean = 1)
-  sample_data <- rexp(n, rate = 1)
+# Create and register a cluster (using 3 cores in this example)
+cl <- makeCluster(detectCores()-1)
+registerDoParallel(cl)
+
+parallel_time <- system.time({
+  # Use foreach in parallel to simulate nsim times
+  coverage_parallel <- foreach(sim = 1:nsim, .combine = c) %dopar% {
+    # Draw a sample of size n from Exp(1)
+    sample_data <- rexp(n, rate = 1)
+    
+    # Bootstrap the sample mean B times
+    boot_means <- replicate(B, mean(sample(sample_data, size = n, replace = TRUE)))
+    
+    # Calculate the 95% percentile bootstrap CI
+    ci <- quantile(boot_means, probs = c(0.025, 0.975))
+    
+    # Return 1 if the true mean (1) is within the CI, else 0
+    as.numeric(1 >= ci[1] & 1 <= ci[2])
+  }
+})
+# Estimate the coverage probability
+coverage_prob_parallel <- mean(coverage_parallel)
+
+# Stop the cluster after parallel processing is complete
+stopCluster(cl)
+
+## Sequential Processing Code
+serial_time <- system.time({
+  coverage_serial <- numeric(nsim)
   
-  # Bootstrap: compute the mean for B bootstrap samples
-  boot_means <- replicate(B, mean(sample(sample_data, size = n, replace = TRUE)))
-  
-  # Compute the 95% percentile bootstrap confidence interval
-  ci <- quantile(boot_means, probs = c(0.025, 0.975))
-  
-  # Check if the true mean (1) falls within the CI
-  coverage[i] <- as.numeric( (1 >= ci[1]) & (1 <= ci[2]) )
-}
+  for (sim in 1:nsim) {
+    sample_data <- rexp(n, rate = 1)
+    boot_means <- replicate(B, mean(sample(sample_data, size = n, replace = TRUE)))
+    ci <- quantile(boot_means, probs = c(0.025, 0.975))
+    coverage_serial[sim] <- as.numeric(1 >= ci[1] & 1 <= ci[2])
+  }
+})
+coverage_prob_serial <- mean(coverage_serial)
 
-# Calculate the coverage probability
-coverage_probability <- mean(coverage)
-cat("Estimated coverage probability:", coverage_probability, "\n")
+## Results
+cat("Parallel processing time:\n")
+print(parallel_time)
+cat("Estimated coverage (parallel):", coverage_prob_parallel, "\n\n")
 
+cat("Sequential processing time:\n")
+print(serial_time)
+cat("Estimated coverage (sequential):", coverage_prob_serial, "\n")
 
 ```
 
@@ -159,9 +179,9 @@ registerDoParallel(cl)
 # Use foreach: for each iteration (1:3), create an iterator for one vector of 5 normals,
 # extract the vector, and compute its maximum.
 results <- foreach(i = 1:3, .combine = c, .packages = "iterators") %dopar% {
-  vec_iter <- irnorm(1, n = 5)  # returns an iterator for 1 vector
-  vec <- nextElem(vec_iter)     # extract the numeric vector from the iterator
-  max(vec)                     # compute the maximum value
+  vec_iter <- irnorm(1, n = 5)  
+  vec <- nextElem(vec_iter)     
+  max(vec)                     
 }
 
 # Stop the cluster
@@ -196,7 +216,7 @@ set.seed(1234)
 # -----------------------
 # Create a parallel cluster
 cl1 <- makeCluster(detectCores() - 1)
-
+registerDoParallel(cl1)
 # Export the variable 'n' to the cluster and load 'iterators' on each worker
 clusterExport(cl1, varlist = "n")
 c <- clusterEvalQ(cl1, library(iterators))
@@ -204,38 +224,27 @@ c <- clusterEvalQ(cl1, library(iterators))
 # Measure time for parLapply
 parLapply_time <- system.time({
   parLapply_results <- parLapply(cl1, 1:num_iter, function(i) {
-    # Create an iterator for one vector of n random normals
     vec_iter <- irnorm(1, n = n)
-    # Extract the numeric vector from the iterator
     vec <- nextElem(vec_iter)
-    # Return the maximum value from the vector
     max(vec)
   })
   parLapply_results <- unlist(parLapply_results)
 })
 stopCluster(cl1)  # Shut down the cluster
 
-# -----------------------
-# Method 2: Using foreach with %dopar% (Parallel)
-# -----------------------
-cl2 <- makeCluster(detectCores() - 1)
-registerDoParallel(cl2)
 
-# Measure time for foreach; export 'n' and load the 'iterators' package on each worker.
+# Using foreach 
 foreach_time <- system.time({
   foreach_results <- foreach(i = 1:num_iter, .combine = c,
                              .packages = "iterators",
-                             .export = "n") %dopar% {
+                             .export = "n") %do% {
     vec_iter <- irnorm(1, n = n)
     vec <- nextElem(vec_iter)
     max(vec)
   }
 })
-stopCluster(cl2)
 
-# -----------------------
-# Method 3: Using replicate (Sequential)
-# -----------------------
+#Using replicate (Sequential)
 replicate_time <- system.time({
   replicate_results <- replicate(num_iter, {
     vec_iter <- irnorm(1, n = n)
@@ -244,9 +253,7 @@ replicate_time <- system.time({
   })
 })
 
-# -----------------------
 # Print the results and timing comparisons
-# -----------------------
 cat("Results and timings:\n\n")
 
 cat("parLapply results:\n")
