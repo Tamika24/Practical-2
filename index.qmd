@@ -1,0 +1,12 @@
+---
+title: "Home Page"
+format: html
+---
+
+# **Welcome to My Practical Answers**
+
+Thank you for visiting! This site contains my solutions for **Practical 2**, covering key concepts and exercises.
+
+Each section includes detailed answers, explanations, and code implementations where necessary. Feel free to navigate through the different practicals using the menu above.
+
+# The link to Git : <https://github.com/Tamika24/Practical1>
