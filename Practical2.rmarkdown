@@ -1,5 +1,6 @@
 ---
 title: "Practical 2"
+format: html
 ---
 
 
@@ -11,6 +12,7 @@ title: "Practical 2"
 
 
 ```{r}
+#| echo: true
 # Load necessary libraries
 library(foreach)
 library(doParallel)
@@ -55,6 +57,7 @@ results
 
 
 ```{r}
+#| echo: true
 # Load necessary libraries
 library(MASS)         # For galaxies data
 library(doParallel)   # For parallel backend
@@ -126,6 +129,7 @@ When each iteration is very quick (like a single bootstrap), parallel processing
 
 
 ```{r}
+#| echo: true
 # Set simulation parameters
 set.seed(123)        # For reproducibility
 n <- 50              # Sample size
@@ -161,46 +165,34 @@ cat("Estimated coverage probability:", coverage_probability, "\n")
 
 ## Question 4
 
-The code using irnorm wasn't working so I did it manually.
-
 
 
 
 ```{r}
+#| echo: true
+library(doParallel)
+library(foreach)
 library(iterators)
+
 set.seed(1234)
 
-# Create the iterator: 3 vectors each with 5 random normals
-it <- irnorm(3, n = 5)
+# Set up a parallel backend using available cores
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
 
-# Manually extract each element
-vec1 <- nextElem(it)
-vec2 <- nextElem(it)
-vec3 <- nextElem(it)
+# Use foreach: for each iteration (1:3), create an iterator for one vector of 5 normals,
+# extract the vector, and compute its maximum.
+results <- foreach(i = 1:3, .combine = c, .packages = "iterators") %dopar% {
+  vec_iter <- irnorm(1, n = 5)  # returns an iterator for 1 vector
+  vec <- nextElem(vec_iter)     # extract the numeric vector from the iterator
+  max(vec)                     # compute the maximum value
+}
 
-# Print the vectors
-print(list(vec1, vec2, vec3))
-max <- c(max(vec1), max(vec2), max(vec3))
-print(max)
-# Load required libraries
-#library(foreach)
-#library(iterators)
+# Stop the cluster
+stopCluster(cl)
 
-# Set the seed for reproducibility
-#set.seed(1234)
-
-# Use foreach with irnorm to iterate over 3 vectors, each with 5 random normals
-# Use .combine = c to collect the maximums into a vector
-#largest_values <- foreach(vec = irnorm(3, n = 5), .combine = c) %do% {
-#  max(vec)
-#}
-
-# Print the largest value from each vector
-#print(largest_values)
-
-
-
-
+# Print the results
+print(results)
 
 ```
 
@@ -213,107 +205,90 @@ print(max)
 
 
 ```{r}
-# Load necessary libraries
-library(foreach)
+#| echo: true
+# -----------------------
+# Setup
+# -----------------------
 library(iterators)
+library(foreach)
+library(doParallel)
 library(parallel)
 
-# Set seed for reproducibility
+# Define parameters
+num_iter <- 3  # Number of vectors to generate
+n <- 5         # Number of random normals per vector
+
+# Set the seed for reproducibility
 set.seed(1234)
 
-# This approach uses the 'foreach' and 'irnorm' iterator.
-time_foreach <- system.time({
-  result_foreach <- foreach(vec = irnorm(3, n = 5)) %do% {
+# -----------------------
+# Method 1: Using parLapply (Parallel)
+# -----------------------
+# Create a parallel cluster
+cl1 <- makeCluster(detectCores() - 1)
+
+# Export the variable 'n' to the cluster and load 'iterators' on each worker
+clusterExport(cl1, varlist = "n")
+c <- clusterEvalQ(cl1, library(iterators))
+
+# Measure time for parLapply
+parLapply_time <- system.time({
+  parLapply_results <- parLapply(cl1, 1:num_iter, function(i) {
+    # Create an iterator for one vector of n random normals
+    vec_iter <- irnorm(1, n = n)
+    # Extract the numeric vector from the iterator
+    vec <- nextElem(vec_iter)
+    # Return the maximum value from the vector
+    max(vec)
+  })
+  parLapply_results <- unlist(parLapply_results)
+})
+stopCluster(cl1)  # Shut down the cluster
+
+# -----------------------
+# Method 2: Using foreach with %dopar% (Parallel)
+# -----------------------
+cl2 <- makeCluster(detectCores() - 1)
+registerDoParallel(cl2)
+
+# Measure time for foreach; export 'n' and load the 'iterators' package on each worker.
+foreach_time <- system.time({
+  foreach_results <- foreach(i = 1:num_iter, .combine = c,
+                             .packages = "iterators",
+                             .export = "n") %dopar% {
+    vec_iter <- irnorm(1, n = n)
+    vec <- nextElem(vec_iter)
     max(vec)
   }
 })
-cat("foreach result:\n")
-print(result_foreach)
-cat("foreach time:\n")
-print(time_foreach)
+stopCluster(cl2)
 
-# For parLapply, we first create a cluster.
-ncores <- detectCores() - 1
-cl <- makeCluster(ncores)
-# Reset seed for reproducibility of the random vectors.
-set.seed(1234)
-# Generate the list of 3 vectors (each of length 5)
-random_vectors <- replicate(3, rnorm(5), simplify = FALSE)
-time_parLapply <- system.time({
-  result_parLapply <- parLapply(cl, random_vectors, function(x) max(x))
-}) 
-# Stop the cluster when done.
-stopCluster(cl)
-cat("\nparLapply result:\n")
-print(result_parLapply)
-cat("parLapply time:\n")
-print(time_parLapply)
-
-# This sequential approach simply repeats the expression 3 times.
-set.seed(1234)
-time_replicate <- system.time({
-  result_replicate <- replicate(3, max(rnorm(5)))
+# -----------------------
+# Method 3: Using replicate (Sequential)
+# -----------------------
+replicate_time <- system.time({
+  replicate_results <- replicate(num_iter, {
+    vec_iter <- irnorm(1, n = n)
+    vec <- nextElem(vec_iter)
+    max(vec)
+  })
 })
-cat("\nreplicate result:\n")
-print(result_replicate)
-cat("replicate time:\n")
-print(time_replicate)
 
+# -----------------------
+# Print the results and timing comparisons
+# -----------------------
+cat("Results and timings:\n\n")
 
+cat("parLapply results:\n")
+print(parLapply_results)
+print(parLapply_time)
 
+cat("\nforeach (%dopar%) results:\n")
+print(foreach_results)
+print(foreach_time)
 
-# Load necessary libraries
-library(foreach)
-library(iterators)
-library(parallel)
-
-# Set seed for reproducibility
-set.seed(1234)
-
-### Method 1: Using foreach with a manually constructed iterator ###
-# Instead of using irnorm (which may not terminate as expected),
-# we pre-generate a list of 3 vectors, each with 5 random numbers.
-random_vectors <- replicate(3, rnorm(5), simplify = FALSE)
-# Create an iterator from the list
-it <- iter(random_vectors)
-result_foreach <- foreach(vec = it) %do% {
-  max(vec)
-}
-cat("foreach result:\n")
-print(result_foreach)
-
-cat("foreach time:\n")
-print(time_foreach)
-
-
-### Method 2: Using parLapply ###
-# Create a cluster. On macOS, PSOCK clusters are typical.
-ncores <- detectCores() - 1
-cl <- makeCluster(ncores)
-
-time_parLapply <- system.time({
-  # Wrap max in an anonymous function to ensure it is found on each worker.
-  result_parLapply <- parLapply(cl, random_vectors, function(x) max(x))
-})
-cat("\nparLapply result:\n")
-print(result_parLapply)
-cat("parLapply time:\n")
-print(time_parLapply)
-
-# Stop the cluster
-stopCluster(cl)
-
-### Method 3: Using replicate ###
-# Reset seed for fair comparison
-set.seed(1234)
-time_replicate <- system.time({
-  result_replicate <- replicate(3, max(rnorm(5)))
-})
-cat("\nreplicate result:\n")
-print(result_replicate)
-cat("replicate time:\n")
-print(time_replicate)
-
+cat("\nreplicate results:\n")
+print(replicate_results)
+print(replicate_time)
 
 ```
-
